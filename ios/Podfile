@@ -31,5 +31,17 @@ target 'PortalMultiverso' do
       :mac_catalyst_enabled => false,
       # :ccache_enabled => true
     )
+
+    installer.pods_project.targets.each do |t|
+      t.build_configurations.each do |cfg|
+        # Permitir includes no modulares en Pods (Xcode 15/16 los marca como error)
+        cfg.build_settings['CLANG_ALLOW_NON_MODULAR_INCLUDES_IN_FRAMEWORK_MODULES'] = 'YES'
+        # Asegura iOS mínimo 14.0 (coherente con RN 0.80.x)
+        current = cfg.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] || '0'
+        if current.to_f < 14.0
+          cfg.build_settings['IPHONEOS_DEPLOYMENT_TARGET'] = '14.0'
+        end
+      end
+    end
   end
 end
