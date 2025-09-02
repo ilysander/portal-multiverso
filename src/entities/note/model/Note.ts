@@ -1,6 +1,5 @@
 import Realm from 'realm';
-import {createRealmContext} from '@realm/react';
-import {BSON} from 'realm';
+import { BSON } from 'realm';
 
 export class Note extends Realm.Object<Note> {
   _id!: BSON.ObjectId;
@@ -8,6 +7,7 @@ export class Note extends Realm.Object<Note> {
   status!: 'pending' | 'synced';
   updatedAt!: Date;
   characterId?: number;
+  remoteId?: number | null;
 
   static primaryKey = '_id';
 
@@ -20,11 +20,7 @@ export class Note extends Realm.Object<Note> {
       status: 'string',
       updatedAt: 'date',
       characterId: { type: 'int', optional: true },
+      remoteId: { type: 'int', optional: true },
     },
   };
 }
-
-export const {RealmProvider, useRealm, useQuery} = createRealmContext({
-  schema: [Note],
-  schemaVersion: 1,
-});

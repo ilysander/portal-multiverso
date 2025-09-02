@@ -1,0 +1,13 @@
+node_modules/
+android/
+ios/
+Pods/
+.gradle/
+*.xcworkspace
+*.xcodeproj
+build/
+dist/
+coverage/
+.tmp/
+**/*.{png,jpg,jpeg,gif,webp,svg,ttf,otf}
+**/*.snap
