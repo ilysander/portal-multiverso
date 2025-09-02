@@ -8,8 +8,16 @@ export type Character = {
   image: string;
   // adicionales
 };
-type PageInfo = { count: number; pages: number; next: string | null; prev: string | null };
-type CharactersResponse = { info: PageInfo; results: Character[] };
+type PageInfo = {
+  count: number;
+  pages: number;
+  next: string | null;
+  prev: string | null;
+};
+type CharactersResponse = {
+  info: PageInfo;
+  results: Character[];
+};
 
 export type CharactersQuery = {
   page?: number;
@@ -28,23 +36,28 @@ export type Episode = {
 export const rmApi = createApi({
   reducerPath: 'rmApi',
   baseQuery: fetchBaseQuery({ baseUrl: 'https://rickandmortyapi.com/api/' }),
+  refetchOnFocus: true,
+  refetchOnReconnect: true,
   endpoints: builder => ({
     getCharacters: builder.query<CharactersResponse, CharactersQuery | void>({
-      query: args => {
-        const page = args?.page ?? 1;
+      query: ({ page = 1, name, status, species } = {}) => {
+        // const page = args?.page ?? 1;
         const params = new URLSearchParams({ page: String(page) });
-        if (args?.name) params.set('name', args.name);
-        if (args?.status) params.set('status', args.status);
-        if (args?.species) params.set('species', args.species);
+        if (name) params.set('name', name);
+        if (status) params.set('status', status);
+        if (species) params.set('species', species);
         return `character?${params.toString()}`;
       },
+      keepUnusedDataFor: 120,
     }),
     getCharacter: builder.query<Character, string | number>({
       query: id => `character/${id}`,
+      keepUnusedDataFor: 300,
     }),
     getEpisodesByIds: builder.query<Episode[], number[]>({
       query: ids => `episode/${ids.join(',')}`,
       transformResponse: (resp: Episode | Episode[]) => (Array.isArray(resp) ? resp : [resp]),
+      keepUnusedDataFor: 300,
     }),
   }),
 });

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   RefreshControl,
   TextInput,
   ActivityIndicator,
+  Pressable,
 } from 'react-native';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { CharactersStackParamList } from '@/app/navigation';
@@ -19,9 +20,17 @@ import { Note } from '@/entities/note/model/Note';
 import { useNoteActions } from '@/entities/note/useNoteActions';
 import { BSON } from 'realm';
 
+import Animated, {
+  Layout,
+  useSharedValue,
+  useAnimatedStyle,
+  withTiming,
+  interpolate,
+} from 'react-native-reanimated';
+
 type Props = NativeStackScreenProps<CharactersStackParamList, 'CharacterDetail'>;
 
-export default function CharacterDetailScreen({ route, navigation }: Props) {
+export default function CharacterDetailScreen({ route }: Props) {
   const { id } = route.params;
 
   const {
@@ -30,7 +39,7 @@ export default function CharacterDetailScreen({ route, navigation }: Props) {
     isLoading: loadingCharacter,
     refetch: refetchCharacter,
     isError: isCharacterError,
-  } = useGetCharacterQuery(id);
+  } = useGetCharacterQuery(id, { refetchOnMountOrArgChange: 60 });
 
   const episodeIds = useMemo(() => {
     const urls = (character as any)?.episode as string[] | undefined;
@@ -42,7 +51,10 @@ export default function CharacterDetailScreen({ route, navigation }: Props) {
     data: episodes = [],
     isFetching: fetchingEpisodes,
     refetch: refetchEpisodes,
-  } = useGetEpisodesByIdsQuery(episodeIds, { skip: episodeIds.length === 0 });
+  } = useGetEpisodesByIdsQuery(episodeIds, {
+    skip: episodeIds.length === 0,
+    refetchOnMountOrArgChange: 60,
+  });
 
   const [refreshing, setRefreshing] = useState(false);
   const onRefresh = useCallback(async () => {
@@ -55,7 +67,10 @@ export default function CharacterDetailScreen({ route, navigation }: Props) {
   }, [refetchCharacter, refetchEpisodes]);
 
   const { createNote, updateNote, deleteNote } = useNoteActions();
-  const notes = useQuery(Note).filtered('characterId == $0', Number(id)).sorted('updatedAt', true);
+  const notesResults = useQuery(Note)
+    .filtered('characterId == $0', Number(id))
+    .sorted('updatedAt', true);
+  const notesArr = useMemo(() => Array.from(notesResults), [notesResults]);
 
   const [newText, setNewText] = useState('');
   const [editingId, setEditingId] = useState<BSON.ObjectId | null>(null);
@@ -100,12 +115,34 @@ export default function CharacterDetailScreen({ route, navigation }: Props) {
 
   const loading = loadingCharacter || (fetchingCharacter && !character);
 
+  const [expanded, setExpanded] = useState(false);
+  const progress = useSharedValue(0);
+
+  useEffect(() => {
+    progress.value = withTiming(expanded ? 1 : 0, { duration: 250 });
+  }, [expanded, progress]);
+
+  const chevronStyle = useAnimatedStyle(() => ({
+    transform: [
+      {
+        rotateZ: `${interpolate(progress.value, [0, 1], [0, Math.PI])}rad`,
+      },
+    ],
+  }));
+
+  const containerFade = useAnimatedStyle(() => ({
+    opacity: interpolate(progress.value, [0, 1], [0.85, 1]),
+  }));
+
+  const visibleNotes = useMemo(
+    () => (expanded ? notesArr : notesArr.slice(0, 1)),
+    [expanded, notesArr],
+  );
+
   if (loading) {
     return (
       <View style={styles.center}>
         <ActivityIndicator />
-        <View style={{ height: 8 }} />
-        <Button title="Volver" onPress={() => navigation.goBack()} />
       </View>
     );
   }
@@ -116,8 +153,6 @@ export default function CharacterDetailScreen({ route, navigation }: Props) {
         <Text style={styles.error}>
           {isCharacterError ? 'No se pudo cargar el personaje.' : 'No encontrado.'}
         </Text>
-        <View style={{ height: 8 }} />
-        <Button title="Volver" onPress={() => navigation.goBack()} />
       </View>
     );
   }
@@ -135,55 +170,78 @@ export default function CharacterDetailScreen({ route, navigation }: Props) {
         {character.species} • {character.status}
       </Text>
 
-      <View style={styles.row}>
-        <Button title="Volver" onPress={() => navigation.goBack()} />
-      </View>
-
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Notas ({notes.length})</Text>
+        <View style={styles.sectionHeaderRow}>
+          <Text style={styles.sectionTitle}>Notas ({notesArr.length})</Text>
 
-        <View style={{ width: '100%', gap: 8 }}>
-          <View style={{ flexDirection: 'row', gap: 8 }}>
-            <TextInput
-              placeholder="Escribe una nota…"
-              value={newText}
-              onChangeText={setNewText}
-              style={styles.input}
-              autoCorrect={false}
-              autoCapitalize="sentences"
-              returnKeyType="done"
-              onSubmitEditing={saveNewNote}
-            />
-            <Button title="Guardar" onPress={saveNewNote} />
-          </View>
-
-          {notes.map(n => (
-            <View key={n._id.toHexString()} style={styles.noteItem}>
-              {editingId && editingId.equals(n._id) ? (
-                <>
-                  <TextInput
-                    value={editingText}
-                    onChangeText={setEditingText}
-                    style={styles.inputEdit}
-                    autoCorrect={false}
-                    autoCapitalize="sentences"
-                    returnKeyType="done"
-                    onSubmitEditing={commitEdit}
-                  />
-                  <Button title="OK" onPress={commitEdit} />
-                  <Button title="Cancelar" onPress={cancelEdit} />
-                </>
-              ) : (
-                <>
-                  <Text style={{ flex: 1 }}>{n.text}</Text>
-                  <Text style={{ marginRight: 8 }}>{n.status === 'pending' ? '⏳' : '✓'}</Text>
-                  <Button title="Editar" onPress={() => startEdit(n)} />
-                  <Button title="Borrar" color="#b00" onPress={() => removeNote(n._id)} />
-                </>
-              )}
-            </View>
-          ))}
+          <Pressable
+            onPress={() => setExpanded(prev => !prev)}
+            hitSlop={8}
+            style={styles.toggle}
+            accessibilityRole="button"
+            accessibilityLabel={expanded ? 'Contraer notas' : 'Expandir notas'}
+          >
+            <Text style={styles.toggleText}>{expanded ? 'Ocultar' : 'Ver todo'}</Text>
+            <Animated.Text style={[styles.chevron, chevronStyle]}>⌄</Animated.Text>
+          </Pressable>
         </View>
+
+        <Animated.View
+          style={[{ width: '100%', gap: 8 }, containerFade]}
+          layout={Layout.springify().stiffness(180).damping(18)}
+        >
+          {expanded && (
+            <Animated.View layout={Layout.springify()} style={{ flexDirection: 'row', gap: 8 }}>
+              <TextInput
+                placeholder="Escribe una nota…"
+                value={newText}
+                onChangeText={setNewText}
+                style={styles.input}
+                autoCorrect={false}
+                autoCapitalize="sentences"
+                returnKeyType="done"
+                onSubmitEditing={saveNewNote}
+              />
+              <Button title="Guardar" onPress={saveNewNote} />
+            </Animated.View>
+          )}
+
+          {visibleNotes.length === 0 ? (
+            <Text style={styles.hint}>No hay notas aún.</Text>
+          ) : (
+            visibleNotes.map(n => (
+              <Animated.View
+                key={n._id.toHexString()}
+                style={styles.noteItem}
+                layout={Layout.springify().stiffness(220).damping(20)}
+              >
+                {editingId && editingId.equals(n._id) ? (
+                  <>
+                    <TextInput
+                      value={editingText}
+                      onChangeText={setEditingText}
+                      style={styles.inputEdit}
+                      autoCorrect={false}
+                      autoCapitalize="sentences"
+                      returnKeyType="done"
+                      onSubmitEditing={commitEdit}
+                    />
+                    <Button title="OK" onPress={commitEdit} />
+                    <Button title="Cancelar" onPress={cancelEdit} />
+                  </>
+                ) : (
+                  <>
+                    <Text style={{ flex: 1 }}>{n.text}</Text>
+                    <Text style={{ marginRight: 8 }}>{n.status === 'pending' ? '⏳' : '✓'}</Text>
+
+                    <Button title="Editar" onPress={() => startEdit(n)} />
+                    <Button title="Borrar" color="#b00" onPress={() => removeNote(n._id)} />
+                  </>
+                )}
+              </Animated.View>
+            ))
+          )}
+        </Animated.View>
       </View>
 
       <View style={styles.section}>
@@ -208,10 +266,10 @@ export default function CharacterDetailScreen({ route, navigation }: Props) {
 }
 
 const styles = StyleSheet.create({
-  container: { 
-    padding: 16, 
-    alignItems: 'center', 
-    gap: 8 
+  container: {
+    padding: 16,
+    alignItems: 'center',
+    gap: 8,
   },
   center: {
     flex: 1,
@@ -242,10 +300,34 @@ const styles = StyleSheet.create({
     width: '100%',
     marginTop: 16,
   },
+  sectionHeaderRow: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+    justifyContent: 'space-between',
+  },
   sectionTitle: {
     fontSize: 18,
     fontWeight: '700',
-    marginBottom: 8,
+  },
+  toggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    backgroundColor: '#f1f1f1',
+  },
+  toggleText: {
+    fontWeight: '600',
+  },
+  chevron: {
+    fontSize: 16,
+    lineHeight: 16,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
   },
   episodeItem: {
     padding: 12,

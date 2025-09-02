@@ -15,11 +15,15 @@ import { CharactersStackParamList } from '@/app/navigation';
 import { useDispatch, useSelector } from 'react-redux';
 import type { RootState } from '@/app/store';
 import { setName, setSpecies, setStatus, clear, type StatusOpt } from './state';
+import { useRoute } from '@react-navigation/native';
 
 type Props = NativeStackScreenProps<CharactersStackParamList, 'CharacterList'>;
 
 export default function CharacterListScreen({ navigation }: Props) {
+  const route =
+    useRoute<NativeStackScreenProps<CharactersStackParamList, 'CharacterList'>['route']>();
   const dispatch = useDispatch();
+  const appliedQueryRef = useRef<string | null>(null);
 
   const { name, species, status } = useSelector((s: RootState) => s.charactersUI);
 
@@ -41,12 +45,15 @@ export default function CharacterListScreen({ navigation }: Props) {
     argsKeyRef.current = argsKey;
   }, [argsKey]);
 
-  const { data, isFetching, isLoading, isError } = useGetCharactersQuery({
-    page,
-    name: name || undefined,
-    species: species || undefined,
-    status: (status || undefined) as any,
-  });
+  const { data, isFetching, isLoading, isError, refetch } = useGetCharactersQuery(
+    {
+      page,
+      name: name || undefined,
+      species: species || undefined,
+      status: (status || undefined) as any,
+    },
+    { refetchOnMountOrArgChange: 60 },
+  );
 
   const [items, setItems] = useState<Character[]>([]);
   const ids = useRef<Set<number>>(new Set());
@@ -61,6 +68,8 @@ export default function CharacterListScreen({ navigation }: Props) {
   useEffect(() => {
     const incoming = data?.results ?? [];
     if (!incoming.length) return;
+    if (page === 1 && ids.current.size === 0 && isFetching) return;
+
     setItems(prev => {
       const out = [...prev];
       for (const ch of incoming) {
@@ -71,7 +80,20 @@ export default function CharacterListScreen({ navigation }: Props) {
       }
       return out;
     });
-  }, [data]);
+  }, [data, isFetching, page]);
+
+  useEffect(() => {
+    const q = route.params?.query?.trim();
+    if (q && appliedQueryRef.current !== q) {
+      appliedQueryRef.current = q;
+      dispatch(setName(q));
+      setNameInput(q);
+
+      setPage(1);
+      setItems([]);
+      ids.current = new Set();
+    }
+  }, [route.params?.query, name, dispatch]);
 
   const hasNext = useMemo(() => Boolean(data?.info?.next), [data?.info?.next]);
 
@@ -81,17 +103,20 @@ export default function CharacterListScreen({ navigation }: Props) {
     setPage(1);
     setItems([]);
     ids.current = new Set();
-    const stop = setInterval(() => {
-      if (!isFetching) {
-        clearInterval(stop);
-        setUserRefreshing(false);
-      }
-    }, 150);
-  }, [isFetching]);
+    refetch();
+    // const stop = setInterval(() => {
+    //   if (!isFetching) {
+    //     clearInterval(stop);
+    //     setUserRefreshing(false);
+    //   }
+    // }, 150);
+  }, [refetch]);
 
   const onEndReached = useCallback(() => {
-    if (!isFetching && hasNext) setPage(p => p + 1);
-  }, [isFetching, hasNext]);
+    if (!isFetching && hasNext && items.length > 0) {
+      setPage(p => p + 1);
+    }
+  }, [isFetching, hasNext, items.length]);
 
   const applyFilters = useCallback(() => {
     dispatch(setName(nameInput.trim()));
@@ -99,12 +124,18 @@ export default function CharacterListScreen({ navigation }: Props) {
   }, [dispatch, nameInput, speciesInput]);
 
   const clearFilters = useCallback(() => {
+    const alreadyEmpty = name === '' && species === '' && status === '';
     dispatch(clear());
     setNameInput('');
     setSpeciesInput('');
     setPage(1);
-    setItems([]);
-    ids.current = new Set();
+    // setItems([]);
+    if (alreadyEmpty) {
+      refetch();
+    } else {
+      setItems([]);
+      ids.current = new Set();
+    }
   }, [dispatch]);
 
   const goDetail = useCallback(
@@ -127,6 +158,7 @@ export default function CharacterListScreen({ navigation }: Props) {
   return (
     <View style={styles.container}>
       <FlatList
+        key={argsKey}
         data={items}
         keyExtractor={item => String(item.id)}
         ItemSeparatorComponent={() => <View style={{ height: 8 }} />}
@@ -195,11 +227,11 @@ export default function CharacterListScreen({ navigation }: Props) {
             </Text>
           </TouchableOpacity>
         )}
-        onEndReachedThreshold={0.4}
+        onEndReachedThreshold={0.1}
         onEndReached={onEndReached}
-        refreshControl={<RefreshControl refreshing={userRefreshing} onRefresh={onRefresh} />}
+        refreshControl={<RefreshControl refreshing={false} onRefresh={onRefresh} />}
         ListFooterComponent={
-          isFetching && hasNext ? (
+          isFetching && hasNext && items.length > 0 ? (
             <View style={{ paddingVertical: 16 }}>
               <ActivityIndicator />
             </View>
