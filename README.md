@@ -1,97 +1,103 @@
-This is a new [**React Native**](https://reactnative.dev) project, bootstrapped using [`@react-native-community/cli`](https://github.com/react-native-community/cli).
+# PortalMultiverso
 
-# Getting Started
+Aplicación móvil en **React Native 0.80.2** (Hermes / New Architecture) que consume la API pública de *Rick & Morty* para listar personajes, aplicar filtros y ver un detalle con notas **offline‑first**. El proyecto está diseñado con arquitectura modular y desacoplada de la UI final, priorizando mantenibilidad, rendimiento y un flujo de datos claro entre **RTK Query** (caché remota) y **Realm** (estado local duradero).
 
-> **Note**: Make sure you have completed the [Set Up Your Environment](https://reactnative.dev/docs/set-up-your-environment) guide before proceeding.
+> Gestor de paquetes: **npm**
 
-## Step 1: Start Metro
+---
 
-First, you will need to run **Metro**, the JavaScript build tool for React Native.
+## Descripción general
 
-To start the Metro dev server, run the following command from the root of your React Native project:
+PortalMultiverso entrega una app funcional que:
+- Lista personajes con filtros por **nombre**, **estado** y **especie**, con **paginación incremental**.
+- Abre un **detalle** de personaje con su información y episodios.
+- Permite crear/editar/borrar **notas locales por personaje**, con **cola de sincronización** (Outbox) que actualiza el estado de cada nota entre `pending` y `synced` al recuperar la conectividad.
+- Soporta **deep links** para abrir directamente la búsqueda o el detalle.
 
-```sh
-# Using npm
-npm start
+Todo el código está organizado por **dominios/features** y desacoplado de estilos y vistas finales.
 
-# OR using Yarn
-yarn start
-```
+---
 
-## Step 2: Build and run your app
+## Tecnologías principales
 
-With Metro running, open a new terminal window/pane from the root of your React Native project, and use one of the following commands to build and run your Android or iOS app:
+- **React Native 0.80.2** (Hermes, New Architecture) — base moderna con mejoras de rendimiento y compatibilidad con Android API 35.
+- **React Navigation v6** — navegación por Tabs/Stack y soporte de deep links declarativos.
+- **Redux Toolkit + RTK Query** — estado de UI y **caché remota** con revalidación/`refetchOnFocus`/`refetchOnReconnect`.
+- **Realm + @realm/react** — base de datos local **offline‑first** para entidades de negocio (notas) con reactividad en tiempo real.
+- **react‑native‑gesture‑handler** y **react‑native‑reanimated 3** — gestos y animaciones fluidas (microinteracciones y transiciones).
+- **@react‑native‑community/netinfo** — estado de red para coordinar la sincronización del Outbox.
 
-### Android
 
-```sh
-# Using npm
-npm run android
+---
 
-# OR using Yarn
-yarn android
-```
+**Reglas de flujo de datos**
+- **Realm**: entidad `Note` (durable/offline). `OutboxEntry` registra operaciones para sincronizar (create/update/delete).
+- **RTK Query**: lectura remota y caché de la API (personajes y episodios).
+- **Redux slice**: estado de **UI** (filtros: nombre, estado, especie). No se guardan grandes entidades aquí.
 
-### iOS
+---
 
-For iOS, remember to install CocoaPods dependencies (this only needs to be run on first clone or after updating native deps).
+## Características implementadas
 
-The first time you create a new project, run the Ruby bundler to install CocoaPods itself:
+### Listado de personajes
+- Filtros: **nombre**, **estado** (`alive|dead|unknown`) y **especie** (texto libre).
+- **Paginación incremental** con prevención de duplicados.
+- **Pull‑to‑refresh** para mantener datos frescos.
+- Los filtros se conservan al navegar y volver (estado de UI en Redux).
 
-```sh
-bundle install
-```
+### Detalle de personaje
+- Información del personaje + lista de episodios (RTK Query).
+- Sección **Notas** con animación de expandir/contraer usando Reanimated:
+  - **Contraída**: muestra solo la **última nota**.
+  - **Expandida**: input para agregar nota y **todas** las notas.
+- CRUD de notas:
+  - Crear/editar/borrar cambia la nota a `pending` y encola la operación.
+  - Al sincronizar con el endpoint mock, cambia a `synced`.
 
-Then, and every time you update your native dependencies, run:
+### Offline‑first y Outbox
+  - Se ejecuta cuando cambia el **Outbox** o cambia la **conectividad** (NetInfo).
+  - Aplica backoff simple y `MAX_ATTEMPTS = 5`. Si se agota, guarda `lastError` para diagnóstico.
+  - Usa JSONPlaceholder como **mock** de escritura (marca `synced` al `ok` del endpoint).
 
-```sh
-bundle exec pod install
-```
+### Deep links
+- **Esquema**: `portalmultiverso://`
+- **Rutas soportadas**:
+  - `portalmultiverso://character/:id` — abre el detalle. El parser inyecta la ruta de lista para conservar la UX de “volver”.  
+  - `portalmultiverso://search?query=<texto>` — aplica el filtro `name` y muestra la lista.
+- Implementado en `src/app/navigation/index.tsx` (`linking` + `getStateFromPath`).
 
-For more information, please visit [CocoaPods Getting Started guide](https://guides.cocoapods.org/using/getting-started.html).
+**Ejemplos**
+- iOS (simulador):
+  ```navegador
+  "portalmultiverso://character/42"
+  "portalmultiverso://search?query=Morty"
+  ```
+- Android (emulador/dispositivo):
+  ```bash
+  adb shell am start -W -a android.intent.action.VIEW -d "portalmultiverso://character/1" com.portalmultiverso
+  adb shell am start -W -a android.intent.action.VIEW -d "portalmultiverso://search?query=Morty" com.portalmultiverso
+  ```
 
-```sh
-# Using npm
+---
+
+## Instalación y ejecución
+
+### Requisitos
+- Node 18+
+- Xcode 15+ / Android SDK 35
+- CocoaPods (si usas iOS): `gem install cocoapods`
+
+### Pasos
+```bash
+# 1) Dependencias
+npm install
+
+# 2) iOS
+npx pod-install
 npm run ios
 
-# OR using Yarn
-yarn ios
+# 3) Android
+npm run android
 ```
 
-If everything is set up correctly, you should see your new app running in the Android Emulator, iOS Simulator, or your connected device.
-
-This is one way to run your app — you can also build it directly from Android Studio or Xcode.
-
-## Step 3: Modify your app
-
-Now that you have successfully run the app, let's make changes!
-
-Open `App.tsx` in your text editor of choice and make some changes. When you save, your app will automatically update and reflect these changes — this is powered by [Fast Refresh](https://reactnative.dev/docs/fast-refresh).
-
-When you want to forcefully reload, for example to reset the state of your app, you can perform a full reload:
-
-- **Android**: Press the <kbd>R</kbd> key twice or select **"Reload"** from the **Dev Menu**, accessed via <kbd>Ctrl</kbd> + <kbd>M</kbd> (Windows/Linux) or <kbd>Cmd ⌘</kbd> + <kbd>M</kbd> (macOS).
-- **iOS**: Press <kbd>R</kbd> in iOS Simulator.
-
-## Congratulations! :tada:
-
-You've successfully run and modified your React Native App. :partying_face:
-
-### Now what?
-
-- If you want to add this new React Native code to an existing application, check out the [Integration guide](https://reactnative.dev/docs/integration-with-existing-apps).
-- If you're curious to learn more about React Native, check out the [docs](https://reactnative.dev/docs/getting-started).
-
-# Troubleshooting
-
-If you're having issues getting the above steps to work, see the [Troubleshooting](https://reactnative.dev/docs/troubleshooting) page.
-
-# Learn More
-
-To learn more about React Native, take a look at the following resources:
-
-- [React Native Website](https://reactnative.dev) - learn more about React Native.
-- [Getting Started](https://reactnative.dev/docs/environment-setup) - an **overview** of React Native and how setup your environment.
-- [Learn the Basics](https://reactnative.dev/docs/getting-started) - a **guided tour** of the React Native **basics**.
-- [Blog](https://reactnative.dev/blog) - read the latest official React Native **Blog** posts.
-- [`@facebook/react-native`](https://github.com/facebook/react-native) - the Open Source; GitHub **repository** for React Native.
+---
