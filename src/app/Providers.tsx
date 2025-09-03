@@ -51,7 +51,7 @@ export const Providers: React.FC = () => {
             </NavigationContainer>
           </ReduxProvider>
 
-          <LatestNotesPanel />
+          {/* <LatestNotesPanel /> */}
 
           <OutboxSyncGate />
         </RealmProvider>
